@@ -1,0 +1,134 @@
+name: publish formula
+
+on:
+  workflow_call:
+    inputs:
+      formula:
+        required: true
+        type: string
+      repository:
+        required: false
+        type: string
+        default: ""
+      ref:
+        required: false
+        type: string
+        default: ""
+      version:
+        required: false
+        type: string
+        default: ""
+      spec-path:
+        required: false
+        type: string
+        default: ".github/homebrew/formula.yml"
+      dry-run:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      token:
+        required: false
+      deploy_key:
+        required: false
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: select credential
+        id: credential
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "mode=dry_run" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$TOKEN" ] && [ -n "$DEPLOY_KEY" ]; then
+            echo "::error::Provide either token or deploy_key, not both."
+            exit 1
+          fi
+          if [ -n "$DEPLOY_KEY" ]; then
+            echo "mode=deploy_key" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::Provide token or deploy_key to publish the formula."
+          exit 1
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          TOKEN: ${{ secrets.token }}
+          DEPLOY_KEY: ${{ secrets.deploy_key }}
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: steps.credential.outputs.mode == 'token'
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          token: ${{ secrets.token }}
+          path: tap
+          fetch-depth: 0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: steps.credential.outputs.mode == 'deploy_key'
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          ssh-key: ${{ secrets.deploy_key }}
+          path: tap
+          fetch-depth: 0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: steps.credential.outputs.mode == 'dry_run'
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: tap
+          fetch-depth: 0
+          persist-credentials: false
+      - name: resolve source inputs
+        id: source
+        run: bash tap/.github/workflows/scripts/resolve-source-inputs.sh
+        env:
+          INPUT_REPOSITORY: ${{ inputs.repository }}
+          INPUT_REF: ${{ inputs.ref }}
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ steps.source.outputs.repository }}
+          ref: ${{ steps.source.outputs.ref }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: generate formula
+        id: formula
+        uses: ./tap/actions/publish/formula
+        with:
+          tap-path: tap
+          source-path: source
+          formula: ${{ inputs.formula }}
+          repository: ${{ steps.source.outputs.repository }}
+          ref: ${{ steps.source.outputs.ref }}
+          version: ${{ inputs.version }}
+          spec-path: ${{ inputs.spec-path }}
+      - name: commit formula
+        if: ${{ !inputs.dry-run }}
+        id: commit_formula
+        working-directory: tap
+        run: bash .github/workflows/scripts/commit-formula.sh
+        env:
+          FORMULA_PATH: ${{ steps.formula.outputs.formula-path }}
+          FORMULA: ${{ inputs.formula }}
+          VERSION: ${{ steps.formula.outputs.version }}
+      - name: tap formula
+        run: brew tap connextable/tap "$GITHUB_WORKSPACE/tap"
+      - name: audit formula
+        run: brew audit --strict "connextable/tap/${{ inputs.formula }}"
+      - name: install formula
+        run: brew install --build-from-source "connextable/tap/${{ inputs.formula }}"
+      - name: test formula
+        run: brew test "connextable/tap/${{ inputs.formula }}"
+      - name: push formula
+        if: ${{ !inputs.dry-run && steps.commit_formula.outputs.changed == 'true' }}
+        working-directory: tap
+        run: bash .github/workflows/scripts/push-formula.sh

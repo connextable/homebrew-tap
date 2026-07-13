@@ -1,0 +1,60 @@
+name: Publish Homebrew formula
+description: Generate a Homebrew formula from a caller-provided formula spec.
+
+inputs:
+  tap-path:
+    description: Path to the checked-out Homebrew tap repository.
+    required: false
+    default: "."
+  source-path:
+    description: Path to the checked-out source repository.
+    required: true
+  formula:
+    description: Formula name, for example gate.
+    required: true
+  repository:
+    description: GitHub repository in owner/name form.
+    required: true
+  ref:
+    description: Git ref, tag, branch, or commit SHA to archive.
+    required: true
+  version:
+    description: Formula version. Defaults to a short SHA for 40-character refs, otherwise ref. Tag prefixes and numeric v prefixes are stripped.
+    required: false
+    default: ""
+  spec-path:
+    description: Formula spec YAML path inside the source repository.
+    required: false
+    default: ".github/homebrew/formula.yml"
+
+outputs:
+  formula-path:
+    description: Relative path to the generated formula.
+    value: ${{ steps.update.outputs.formula-path }}
+  archive-url:
+    description: Source archive URL used by the formula.
+    value: ${{ steps.update.outputs.archive-url }}
+  sha256:
+    description: Source archive SHA-256 checksum.
+    value: ${{ steps.update.outputs.sha256 }}
+  resolved-ref:
+    description: Immutable commit SHA used by the source archive URL.
+    value: ${{ steps.update.outputs.resolved-ref }}
+  version:
+    description: Formula version used by the generated formula.
+    value: ${{ steps.update.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: update
+      shell: bash
+      env:
+        TAP_PATH: ${{ inputs.tap-path }}
+        SOURCE_PATH: ${{ inputs.source-path }}
+        FORMULA: ${{ inputs.formula }}
+        REPOSITORY: ${{ inputs.repository }}
+        REF: ${{ inputs.ref }}
+        VERSION: ${{ inputs.version }}
+        SPEC_PATH: ${{ inputs.spec-path }}
+      run: bash "$GITHUB_ACTION_PATH/generate.sh"
