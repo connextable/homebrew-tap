@@ -151,6 +151,10 @@ def indent_snippet(value, spaces)
   value.lines.map { |line| line == "\n" ? line : (" " * spaces) + line }.join
 end
 
+def normalize_bin_paths(value)
+  value.gsub(/"#\{bin\}\/([^\"]+)"/, 'bin/"\\1"')
+end
+
 def render_snippet_block(name, value)
   return "" if value.nil?
   content = +"  #{name} do\n"
@@ -376,8 +380,8 @@ fail_with("formula renders an invalid Ruby class name: #{class_name}") unless cl
 desc = required_string(spec, "desc")
 homepage = optional_string(spec, "homepage") || "https://github.com/#{ENV.fetch("REPOSITORY")}"
 license = spec.fetch("license") { fail_with("license is required") }
-install = required_string(spec, "install")
-test = required_string(spec, "test")
+install = normalize_bin_paths(required_string(spec, "install"))
+test = normalize_bin_paths(required_string(spec, "test"))
 dependencies = dependency_lines(spec["dependencies"])
 options = option_lines(spec["options"])
 conflicts_with = conflicts_with_lines(spec["conflicts_with"])
