@@ -120,14 +120,12 @@ jobs:
           FORMULA_PATH: ${{ steps.formula.outputs.formula-path }}
           FORMULA: ${{ inputs.formula }}
           VERSION: ${{ steps.formula.outputs.version }}
-      - name: tap formula
-        run: brew tap connextable/tap "$GITHUB_WORKSPACE/tap"
       - name: audit formula
-        run: brew audit --strict "connextable/tap/${{ inputs.formula }}"
+        run: brew audit --strict --formula "$GITHUB_WORKSPACE/tap/${{ steps.formula.outputs.formula-path }}"
       - name: install formula
-        run: brew install --build-from-source "connextable/tap/${{ inputs.formula }}"
+        run: brew install --build-from-source "$GITHUB_WORKSPACE/tap/${{ steps.formula.outputs.formula-path }}"
       - name: test formula
-        run: brew test "connextable/tap/${{ inputs.formula }}"
+        run: brew test "$GITHUB_WORKSPACE/tap/${{ steps.formula.outputs.formula-path }}"
       - name: push formula
         if: ${{ !inputs.dry-run && steps.commit_formula.outputs.changed == 'true' }}
         working-directory: tap
