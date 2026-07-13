@@ -423,6 +423,7 @@ unless class_stanzas.empty?
 end
 
 content << "  def install\n"
+content << "    ENV[\"GOTOOLCHAIN\"] = \"auto\"\n" if install.include?('system "go"')
 content << indent_snippet(install, 4)
 content << "\n" unless content.end_with?("\n")
 content << "  end\n"
