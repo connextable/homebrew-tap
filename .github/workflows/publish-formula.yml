@@ -26,6 +26,18 @@ on:
         required: false
         type: boolean
         default: false
+      tap-branch:
+        required: false
+        type: string
+        default: "main"
+      tap-repository:
+        required: false
+        type: string
+        default: "connextable/homebrew-tap"
+      tap-ref:
+        required: false
+        type: string
+        default: "main"
     secrets:
       token:
         required: false
@@ -33,8 +45,12 @@ on:
         required: false
 
 jobs:
-  publish:
+  publish-formula:
+    name: Publish Homebrew formula
     runs-on: macos-latest
+    concurrency:
+      group: formula-${{ github.repository }}-${{ inputs.formula }}
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -66,27 +82,36 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: steps.credential.outputs.mode == 'token'
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: ${{ inputs.tap-repository }}
+          ref: ${{ inputs.tap-ref }}
           token: ${{ secrets.token }}
           path: tap
           fetch-depth: 0
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: steps.credential.outputs.mode == 'deploy_key'
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: ${{ inputs.tap-repository }}
+          ref: ${{ inputs.tap-ref }}
           ssh-key: ${{ secrets.deploy_key }}
           path: tap
           fetch-depth: 0
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: steps.credential.outputs.mode == 'dry_run'
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: ${{ inputs.tap-repository }}
+          ref: ${{ inputs.tap-ref }}
           path: tap
           fetch-depth: 0
           persist-credentials: false
+      - name: prepare tap branch
+        working-directory: tap
+        env:
+          TAP_BRANCH: ${{ inputs.tap-branch }}
+        run: |
+          set -euo pipefail
+          git check-ref-format --branch "$TAP_BRANCH" >/dev/null
+          git fetch origin "$TAP_BRANCH"
+          git switch --force-create "$TAP_BRANCH" "origin/$TAP_BRANCH"
       - name: resolve source inputs
         id: source
         run: bash tap/.github/workflows/scripts/resolve-source-inputs.sh
@@ -111,6 +136,25 @@ jobs:
           ref: ${{ steps.source.outputs.ref }}
           version: ${{ inputs.version }}
           spec-path: ${{ inputs.spec-path }}
+      - name: validate formula
+        env:
+          FORMULA: ${{ inputs.formula }}
+        run: |
+          set -euo pipefail
+          validation_root="$(mktemp -d)"
+          validation_tap="$validation_root/homebrew-validation"
+          cp -R tap "$validation_tap"
+          rm -rf "$validation_tap/.git"
+          git init --initial-branch=main "$validation_tap"
+          git -C "$validation_tap" config user.name "github-actions[bot]"
+          git -C "$validation_tap" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$validation_tap" add -A
+          git -C "$validation_tap" commit -m "test: validate $FORMULA" >/dev/null
+          brew tap connextable/validation "$validation_tap"
+          qualified_formula="connextable/validation/$FORMULA"
+          brew audit --strict --formula "$qualified_formula"
+          HOMEBREW_NO_INSTALL_FROM_API=1 brew install --build-from-source "$qualified_formula"
+          brew test "$qualified_formula"
       - name: commit formula
         if: ${{ !inputs.dry-run }}
         id: commit_formula
@@ -120,13 +164,9 @@ jobs:
           FORMULA_PATH: ${{ steps.formula.outputs.formula-path }}
           FORMULA: ${{ inputs.formula }}
           VERSION: ${{ steps.formula.outputs.version }}
-      - name: audit formula
-        run: brew audit --strict --formula "$GITHUB_WORKSPACE/tap/${{ steps.formula.outputs.formula-path }}"
-      - name: install formula
-        run: brew install --build-from-source "$GITHUB_WORKSPACE/tap/${{ steps.formula.outputs.formula-path }}"
-      - name: test formula
-        run: brew test "$GITHUB_WORKSPACE/tap/${{ steps.formula.outputs.formula-path }}"
       - name: push formula
         if: ${{ !inputs.dry-run && steps.commit_formula.outputs.changed == 'true' }}
         working-directory: tap
         run: bash .github/workflows/scripts/push-formula.sh
+        env:
+          TAP_BRANCH: ${{ inputs.tap-branch }}

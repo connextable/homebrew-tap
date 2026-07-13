@@ -35,8 +35,8 @@ and upgrades from this tap stop after users run `brew update`.
 
 Projects can update this tap by calling the reusable workflow. The publishing
 repository provides a Formula spec, and this tap generates the Formula with the
-source archive metadata, audits it, installs it from source, tests it, and pushes
-the formula commit.
+source archive metadata. It validates an isolated copy by auditing, installing,
+and testing it before committing or pushing the Formula update.
 
 > [!IMPORTANT]
 > For non-dry-run publishing, provide exactly one publish credential: `token`
@@ -209,29 +209,18 @@ Workflow inputs:
 | `version` | No | Short SHA for 40-character refs, otherwise `ref` |
 | `spec-path` | No | `.github/homebrew/formula.yml` |
 | `dry-run` | No | `false` |
+| `tap-branch` | No | `main` |
+| `tap-repository` | No | `connextable/homebrew-tap` |
+| `tap-ref` | No | `main` |
 
 When `repository` is different from the caller repository, `ref` is required.
 Tag-style versions are normalized for Homebrew: `refs/tags/v1.2.3`,
 `tags/v1.2.3`, `ref: v1.2.3`, and `version: v1.2.3` render as
 `version "1.2.3"`.
 
-### Dry Run Check
-
-Add this to the publishing repository's regular check workflow so Formula
-spec, audit, install, and test failures are caught before release/tag
-publishing:
-
-```yaml
-jobs:
-  homebrew:
-    uses: connextable/homebrew-tap/.github/workflows/publish-formula.yml@main
-    with:
-      formula: <formula>
-      dry-run: true
-```
-
-Dry runs do not require `token` or `deploy_key`, and they skip the formula commit
-and push steps.
+The publishing workflow performs one Formula validation during delivery. It
+does not require a separate dry-run workflow: a validation failure leaves the
+tap unchanged.
 
 The lower-level composite action is also available for custom workflows:
 
